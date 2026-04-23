@@ -1,0 +1,52 @@
+# ── Python ────────────────────────────────────────────────
+# Virtual environment — never commit this. It's compiled for
+# the machine it was built on and is hundreds of MB.
+venv/
+.venv/
+env/
+
+# Compiled Python files
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Distribution / packaging
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Test / coverage output
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ── Environment & secrets ─────────────────────────────────
+# Never commit .env files — they may contain API keys,
+# database passwords, secret keys, etc.
+.env
+.env.*
+!.env.example
+
+# ── Frontend (Node) ───────────────────────────────────────
+# Node modules — same reasoning as venv, never commit
+node_modules/
+
+# Build output — generated files, not source
+frontend/dist/
+frontend/build/
+frontend/.vite/
+
+# ── macOS ─────────────────────────────────────────────────
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# ── Editor ────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ── Misc ──────────────────────────────────────────────────
+*.log
