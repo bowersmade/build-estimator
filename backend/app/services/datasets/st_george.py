@@ -110,3 +110,13 @@ OPTIONAL_ADDONS = {
 REGIONAL_ADJUSTMENTS = {
     "material_cost_multiplier": 1.05,
 }
+
+# When the wall geometry model is active, BASE_MATERIAL_COSTS["lumber"] is
+# replaced by this value. It covers only floor framing (joists, beams, subfloor)
+# because wall framing lumber is now calculated from actual stud counts and
+# plate lengths in calculate_wall_costs().
+#
+# Original lumber cost was $35/sqft — a catch-all for floor + wall + roof framing.
+# Rough split: ~$15 floor framing, ~$15 wall framing, ~$5 misc/roof blocking.
+# Once a dedicated floor framing model exists this constant goes away too.
+FLOOR_FRAMING_COST_PER_SQFT = 15

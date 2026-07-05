@@ -152,6 +152,53 @@ APPLIANCES = {
     },
 }
 
+# ── Wall framing ──────────────────────────────────────────────────────────────
+
+# Lumber pricing per linear foot by board dimension.
+# Approximate material costs, St. George UT market (2025).
+# Exterior walls use 2x6 (required by modern energy codes — deeper stud cavity
+# holds more insulation). Interior walls use 2x4.
+LUMBER_PRICES = {
+    "2x4":  0.65,   # interior wall studs, plates, cripples, rough sills
+    "2x6":  1.15,   # exterior wall studs and plates
+    "2x8":  1.65,   # headers over 3-5ft openings
+    "2x10": 2.25,   # headers over 5-7ft openings
+    "2x12": 2.75,   # headers over 7-9ft openings
+    "lvl":  9.00,   # engineered LVL beam for openings over 9ft
+}
+
+# OSB 7/16" structural sheathing applied to exterior wall faces only.
+# Price per sqft of net wall surface area.
+SHEATHING_PRICE_PER_SQFT = 0.65
+
+# 1/2" standard drywall, price per sqft of net wall surface area.
+# Exterior walls get one face; interior finished walls get both faces.
+DRYWALL_PRICE_PER_SQFT = 0.65
+
+# Batt insulation (R-15 for 2x4, R-21 for 2x6), price per sqft of net wall area.
+# Exterior walls only — interior walls are not insulated in standard residential.
+INSULATION_PRICE_PER_SQFT = 0.75
+
+# Window and door rough material costs, priced per sqft of rough opening area
+# (opening.width × opening.height). Placeholder pricing until a full window/door
+# catalog with style selection is added.
+WINDOW_PRICE_PER_SQFT = 80.0
+DOOR_PRICE_PER_SQFT   = 65.0
+
+# Header sizing by opening span.
+# Format: (max_opening_width_ft, lumber_type, header_depth_inches)
+# Entries are checked in order — the first where opening width <= max applies.
+# None for max_width is the catch-all (LVL beam for anything over 9ft).
+# header_depth_inches is the actual width of the board (e.g. 2x6 is 5.5")
+# and is used to calculate jack stud height = wall_height - header_depth.
+HEADER_SPECS = [
+    (3.0,  "2x6",  5.5),
+    (5.0,  "2x8",  7.25),
+    (7.0,  "2x10", 9.25),
+    (9.0,  "2x12", 11.25),
+    (None, "lvl",  9.5),    # over 9ft — engineered beam
+]
+
 # Extra multiplier per roof type on top of the pitch slope factor.
 # Gable and shed are the baseline (1.0). Hip roofs have more surface
 # area due to four sloping sides. Mansard has a very steep lower slope

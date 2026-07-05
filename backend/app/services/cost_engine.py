@@ -1,3 +1,5 @@
+import logging
+
 from app.services.datasets import st_george as data
 from app.services.datasets import materials_catalog as catalog
 from app.services.calculations import (
@@ -6,16 +8,26 @@ from app.services.calculations import (
     calculate_paint_cost,
     calculate_appliance_cost,
     calculate_permit_costs,
+    calculate_wall_costs,
+)
+from app.services.formatters import (
+    dollars,
+    format_flooring_selections,
+    format_roofing_selection,
+    format_paint_selection,
+    format_appliance_selections,
+    format_wall_selections,
 )
 from app.models.estimate import HouseInput, FlooringZone, RoofInput, PaintInput
 
-
-def dollars(value: float) -> float:
-    return round(value, 2)
+log = logging.getLogger(__name__)
 
 
 def generate_estimate(house_input: HouseInput):
-    sqft = house_input.square_footage
+    sqft      = house_input.square_footage
+    has_walls = bool(house_input.wall_segments)
+
+    log.info(f"═══ generate_estimate | sqft={sqft} | walls={len(house_input.wall_segments)} | framing={house_input.framing_method} ═══")
 
     flooring_zones = house_input.flooring_zones
     if not flooring_zones:
@@ -23,73 +35,61 @@ def generate_estimate(house_input: HouseInput):
 
     roof = house_input.roof
     if not roof:
-        # No pitch needed — if sqft is also absent, calculate_roof_area falls back to 6/12.
-        roof = RoofInput(type="gable", material="architectural_shingles")
+        roof = RoofInput(type="gable", pitch=6, material="architectural_shingles")
 
     paint = house_input.paint
     if not paint:
         paint = PaintInput(material="standard_eggshell")
 
-    # --- Calculations ---
+    if has_walls:
+        base_costs = {
+            "concrete": data.BASE_MATERIAL_COSTS["concrete"],
+            "lumber":   data.FLOOR_FRAMING_COST_PER_SQFT,
+        }
+        log.info(f"Path: WALL MODEL active — lumber reduced to floor framing (${data.FLOOR_FRAMING_COST_PER_SQFT}/sqft)")
+    else:
+        base_costs = data.BASE_MATERIAL_COSTS
+        log.info("Path: FALLBACK — using per-sqft estimates for all materials")
 
-    material_total, material_breakdown = calculate_material_costs(sqft, flooring_zones)
+    material_total, material_breakdown = calculate_material_costs(sqft, flooring_zones, base_costs)
+    log.debug(f"Base + flooring costs: { {k: f'${v:,.2f}' for k, v in material_breakdown.items()} }")
+
+    wall_result = None
+    if has_walls:
+        wall_result = calculate_wall_costs(house_input.wall_segments, house_input.framing_method)
+        material_breakdown.update(wall_result["breakdown"])
+        material_total += wall_result["total_cost"]
+
+        ceiling_drywall_cost = sqft * catalog.DRYWALL_PRICE_PER_SQFT
+        material_breakdown["drywall"] += ceiling_drywall_cost
+        material_total += ceiling_drywall_cost
+        log.debug(f"Ceiling drywall: {sqft} sqft → ${ceiling_drywall_cost:,.2f}")
 
     roofing_cost, roof_area = calculate_roofing_cost(sqft, roof)
     material_breakdown["roofing"] = roofing_cost
     material_total += roofing_cost
+    log.debug(f"Roofing: {roof_area} sqft → ${roofing_cost:,.2f}")
 
-    paint_cost, wall_area, paint_area_source = calculate_paint_cost(sqft, paint)
+    geometry_sqft = wall_result["drywall_sqft"] if wall_result else None
+    paint_cost, wall_area, paint_area_source = calculate_paint_cost(sqft, paint, geometry_sqft)
     material_breakdown["paint"] = paint_cost
     material_total += paint_cost
+    log.debug(f"Paint: {wall_area} sqft ({paint_area_source}) → ${paint_cost:,.2f}")
 
-    # Apply regional multiplier only to construction materials and paint.
-    # Appliances are nationally priced retail products — they don't cost
-    # more based on region, so they are added after the multiplier.
-    material_total *= data.REGIONAL_ADJUSTMENTS["material_cost_multiplier"]
+    multiplier     = data.REGIONAL_ADJUSTMENTS["material_cost_multiplier"]
+    pre_multiplier = material_total
+    material_total *= multiplier
+    log.info(f"Regional multiplier: {multiplier:.2f}x | ${pre_multiplier:,.2f} → ${material_total:,.2f}")
 
     appliance_total, appliance_breakdown = calculate_appliance_cost(house_input.appliances)
     material_breakdown["appliances"] = appliance_total
     material_total += appliance_total
+    log.debug(f"Appliances: ${appliance_total:,.2f} ({len(appliance_breakdown)} item type(s))")
 
     permits_total = calculate_permit_costs(sqft)
-    total_cost = material_total + permits_total
-
-    # --- Selection strings ---
-
-    flooring_selections = []
-    for zone in flooring_zones:
-        option = catalog.FLOORING[zone.material]
-        zone_cost = zone.sqft * option["price_per_sqft"]
-        label = zone.room if zone.room else "Unassigned"
-        flooring_selections.append(
-            f"{label}: {option['display_name']} (${option['price_per_sqft']}/sqft x {zone.sqft} sqft = ${dollars(zone_cost):,.2f})"
-        )
-
-    roofing_option = catalog.ROOFING[roof.material]
-    if roof.sqft:
-        area_source = "provided"
-    elif roof.pitch is not None:
-        area_source = f"calculated from {roof.pitch}/12 pitch"
-    else:
-        area_source = "calculated from default 6/12 pitch"
-
-    roofing_selection = (
-        f"{roof.type.capitalize()} roof — "
-        f"{roofing_option['display_name']} (${roofing_option['price_per_sqft']}/sqft x {roof_area} sqft [{area_source}] = ${dollars(roofing_cost):,.2f})"
-    )
-
-    paint_option = catalog.PAINT[paint.material]
-    paint_selection = (
-        f"{paint_option['display_name']} (${paint_option['price_per_sqft']}/sqft x {wall_area} sqft [{paint_area_source}] = ${dollars(paint_cost):,.2f})"
-    )
-
-    appliance_selections = []
-    for selection in house_input.appliances:
-        option = catalog.APPLIANCES[selection.appliance]
-        line_total = option["unit_price"] * selection.quantity
-        appliance_selections.append(
-            f"{option['display_name']} x{selection.quantity} @ ${option['unit_price']:,} each = ${dollars(line_total):,.2f}"
-        )
+    total_cost    = material_total + permits_total
+    log.info(f"Permits: ${permits_total:,.2f}")
+    log.info(f"─── TOTAL: ${total_cost:,.2f} (${total_cost / sqft:.2f}/sqft) ───")
 
     return {
         "materials":     dollars(material_total),
@@ -97,12 +97,13 @@ def generate_estimate(house_input: HouseInput):
         "total_cost":    dollars(total_cost),
         "cost_per_sqft": dollars(total_cost / sqft),
         "selections": {
-            "flooring":   flooring_selections,
-            "roofing":    [roofing_selection],
-            "paint":      [paint_selection],
-            "appliances": appliance_selections,
+            "flooring":   format_flooring_selections(flooring_zones),
+            "roofing":    [format_roofing_selection(roof, roof_area, roofing_cost)],
+            "paint":      [format_paint_selection(paint, wall_area, paint_cost, paint_area_source)],
+            "appliances": format_appliance_selections(house_input.appliances),
+            "walls":      format_wall_selections(house_input, wall_result),
         },
         "cost_breakdown": {
             "materials": {k: dollars(v) for k, v in material_breakdown.items()}
-        }
+        },
     }
